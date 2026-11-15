@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AI_PROMPT, SelectBudgetOptions, SelectTravelesList } from '@/constants/options';
 import { chatSession } from '@/service/AIModal';
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import GooglePlacesAutocomplete from 'react-google-places-autocomplete'
 import { toast } from 'sonner';
 import { AiOutlineLoading3Quarters } from "react-icons/ai";
@@ -20,11 +20,12 @@ import axios from 'axios';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '@/service/firebaseConfig';
 import { useNavigate } from 'react-router-dom';
+import { validateTripPreferences, parseItinerary } from './validation.js';
 
 function CreateTrip() {
   const [place, setPlace] = useState();
 
-  const [formData, setFormData] = useState([]);
+  const [formData, setFormData] = useState({});
   const [openDailog, setOpenDailog] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -40,72 +41,66 @@ function CreateTrip() {
     })
   }
 
-  useEffect(() => {
-    console.log(formData);
-  }, [formData])
-
   const login = useGoogleLogin({
-    onSuccess: (codeResp) => GetUserProfile(codeResp),
-    onError: (error) => console.log(error)
-  })
+    onSuccess: (token) => { void GetUserProfile(token); },
+    onError: () => toast.error('Google sign-in was not completed.')
+  });
 
   const OnGenerateTrip = async () => {
-
-    const user = localStorage.getItem('user');
-
-    if (!user) {
-      setOpenDailog(true)
+    const validationError = validateTripPreferences(formData);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+    if (!localStorage.getItem('user')) {
+      setOpenDailog(true);
       return;
     }
 
-    if (formData?.noOfDays > 5 && !formData?.location || !formData?.budget || !formData?.traveler) {
-      toast("Please fill all details")
-      return;
+    setLoading(true);
+    try {
+      const prompt = AI_PROMPT
+        .replaceAll('{location}', formData.location.label)
+        .replaceAll('{totalDays}', String(formData.noOfDays))
+        .replaceAll('{traveler}', formData.traveler)
+        .replaceAll('{budget}', formData.budget);
+      const result = await chatSession.sendMessage(prompt);
+      await SaveAiTrip(parseItinerary(result?.response?.text()));
+      toast.success('Trip saved.');
+    } catch (error) {
+      console.error('Trip creation failed:', error);
+      toast.error('Trip generation or saving failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(true);
-    toast('Please wait... We are working on it...')
-    const FINAL_PROMPT = AI_PROMPT
-      .replace('{location}', formData?.location?.label)
-      .replace('{totalDays}', formData?.noOfDays)
-      .replace('{traveler}', formData?.traveler)
-      .replace('{budget}', formData?.budget)
-      .replace('{totalDays}', formData?.noOfDays)
-    const result = await chatSession.sendMessage(FINAL_PROMPT);
+  };
 
-    console.log("--", result?.response?.text());
-    setLoading(false);
-    SaveAiTrip(result?.response?.text())
-  }
-
-  const SaveAiTrip = async (TripData) => {
-
-    setLoading(true);
-    const user = JSON.parse(localStorage.getItem('user'));
-    const docId = Date.now().toString()
-
-    await setDoc(doc(db, "AITrips", docId), {
-      userSelection: formData,
-      tripData: JSON.parse(TripData),
-      userEmail: user?.email,
-      id: docId
+  const SaveAiTrip = async (tripData) => {
+    const user = JSON.parse(localStorage.getItem('user') || 'null');
+    if (!user?.email) throw new Error('Sign in before saving.');
+    if (!db) throw new Error('Firestore must be configured before saving.');
+    const docId = crypto.randomUUID();
+    await setDoc(doc(db, 'AITrips', docId), {
+      userSelection: formData, tripData, userEmail: user.email, id: docId
     });
-    setLoading(false);
-    navigate('/view-trip/'+docId)
-  }
+    navigate('/view-trip/' + docId);
+  };
 
-  const GetUserProfile = (tokenInfo) => {
-    axios.get(`https://www.googleapis.com/oauth2/v1/userinfo?acess_token=${tokenInfo?.access_token}`, {
-      headers: {
-        Authorization: `Bearer ${tokenInfo?.access_token}`,
-        Accept: 'Application/json'
-      }
-    }).then((resp) => {
-      console.log(resp);
-      localStorage.setItem('user', JSON.stringify(resp.data));
+  const GetUserProfile = async (tokenInfo) => {
+    try {
+      const response = await axios.get('https://www.googleapis.com/oauth2/v1/userinfo', {
+        headers: { Authorization: 'Bearer ' + tokenInfo.access_token }
+      });
+      if (!response.data?.email) throw new Error('Profile email missing.');
+      localStorage.setItem('user', JSON.stringify(response.data));
       setOpenDailog(false);
-      OnGenerateTrip();
-    })
-  }
+      await OnGenerateTrip();
+    } catch (error) {
+      console.error('Google sign-in profile failed:', error);
+      toast.error('Could not finish sign-in.');
+    }
+  };
+
   return (
     <div className='sm:px-10 md:px-32 lg:px-56 xl:px-72 px-5 mt-10'>
       <h2 className='font-bold text-3xl'>Tell us your travel preferences 🏕️🌴</h2>

@@ -1,50 +1,49 @@
 import { db } from '@/service/firebaseConfig';
 import { doc, getDoc } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { toast } from 'sonner';
+import React, { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import InfoSection from '../components/InfoSection';
 import Hotels from '../components/Hotels';
 import PlacesToVisit from '../components/PlacesToVisit';
 import Footer from '../components/Footer';
 
-function Viewtrip() {
+export default function Viewtrip() {
+  const { tripId } = useParams();
+  const [trip, setTrip] = useState(null);
+  const [status, setStatus] = useState('Loading trip…');
 
-    const {tripId}=useParams();
-    const [trip,setTrip]=useState([]);
-    useEffect(()=>{
-        tripId&&GetTripData();
-    },[tripId])
-
-    /**
-     * Used to get Trip Information from Firebase
-     */
-    const GetTripData=async()=>{
-        const docRef=doc(db,'AITrips',tripId);
-        const docSnap=await getDoc(docRef);
-
-        if(docSnap.exists()){
-            console.log("Dodcument:",docSnap.data());
-            setTrip(docSnap.data());
+  useEffect(() => {
+    let active = true;
+    async function loadTrip() {
+      if (!db) {
+        if (active) setStatus('Firestore is not configured for this demo.');
+        return;
+      }
+      try {
+        const snapshot = await getDoc(doc(db, 'AITrips', tripId));
+        if (!active) return;
+        if (snapshot.exists()) {
+          setTrip(snapshot.data());
+          setStatus('');
+        } else {
+          setStatus('This trip was not found.');
         }
-        else{
-            console.log("No Such Document");
-            toast('No trip Found!')
-        }
+      } catch {
+        if (active) setStatus('Could not load this trip. Check your account and permissions.');
+      }
     }
+    if (tripId) void loadTrip();
+    return () => { active = false; };
+  }, [tripId]);
+
+  if (!trip) return <p role="status" className="mx-auto max-w-3xl p-10">{status}</p>;
 
   return (
-    <div className='p-10 md:px-20 lg:px-44 xl:px-56'>
-        {/* Information Section  */}
-            <InfoSection trip={trip} />
-        {/* Recommended Hotels  */}
-            <Hotels trip={trip} />
-        {/* Daily Plan  */}
-            <PlacesToVisit trip={trip} />
-        {/* Footer  */}
-            <Footer trip={trip} />
+    <div className="p-10 md:px-20 lg:px-44 xl:px-56">
+      <InfoSection trip={trip} />
+      <Hotels trip={trip} />
+      <PlacesToVisit trip={trip} />
+      <Footer trip={trip} />
     </div>
-  )
+  );
 }
-
-export default Viewtrip
