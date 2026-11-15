@@ -1,44 +1,50 @@
-import { Button } from '@/components/ui/button'
 import { GetPlaceDetails, PHOTO_REF_URL } from '@/service/GlobalApi';
-import React, { useEffect, useState } from 'react'
-import { IoIosSend } from "react-icons/io";
+import React, { useEffect, useState } from 'react';
 
-function InfoSection({trip}) {
+export default function InfoSection({ trip }) {
+  const [photoUrl, setPhotoUrl] = useState(null);
+  const location = trip?.userSelection?.location?.label;
 
-  const [photoUrl,setPhotoUrl]=useState();
-  useEffect(()=>{
-    trip&&GetPlacePhoto();
-  },[trip])
-
-  const GetPlacePhoto=async()=>{
-    const data={
-      textQuery:trip?.userSelection?.location?.label
+  useEffect(() => {
+    let active = true;
+    if (!location || !import.meta.env.VITE_GOOGLE_PLACE_API_KEY) return undefined;
+    async function loadPhoto() {
+      try {
+        const result = await GetPlaceDetails({ textQuery: location });
+        const name = result.data?.places?.[0]?.photos?.[0]?.name;
+        if (active && name) {
+          setPhotoUrl(PHOTO_REF_URL.replace('{NAME}', encodeURIComponent(name)));
+        }
+      } catch {
+        // A missing or blocked Places photo does not prevent the itinerary loading.
+      }
     }
-    const result=await GetPlaceDetails(data).then(resp=>{
-      console.log(resp.data.places[0].photos[3].name);
+    void loadPhoto();
+    return () => { active = false; };
+  }, [location]);
 
-      const PhotoUrl=PHOTO_REF_URL.replace('{NAME}',resp.data.places[0].photos[3].name);
-      setPhotoUrl(PhotoUrl);
-    })
-  }
   return (
     <div>
-        <img src={photoUrl?photoUrl:'/placeholder.jpg'} className='h-[340px] w-full object-cover rounded-xl'/>
-
-        <div className='flex justify-between items-center'>
-            <div className=' my-5 flex flex-col gap-2'>
-                <h2 className='font-bold text-2xl'>{trip?.userSelection?.location?.label}</h2>
-                <div className=' hidden sm:flex gap-5'>
-                    <h2 className='p-1 px-3 bg-gray-200 rounded-full text-gray-500'>📅 {trip.userSelection?.noOfDays} Day</h2>
-                    <h2 className='p-1 px-3 bg-gray-200 rounded-full text-gray-500'>💰 {trip.userSelection?.budget} Budget</h2>
-                    <h2 className='p-1 px-3 bg-gray-200 rounded-full text-gray-500'>🥂 No. Of Traveler: {trip.userSelection?.traveler} </h2>
-                
-                </div>
-            </div>
-            <Button><IoIosSend /></Button>
+      <img src={photoUrl || '/placeholder.jpg'}
+        alt={location ? 'Travel overview for ' + location : 'Trip placeholder'}
+        className="h-[340px] w-full object-cover rounded-xl" />
+      <div className="my-5 flex flex-col gap-2">
+        <h2 className="font-bold text-2xl">{location}</h2>
+        <div className="flex flex-wrap gap-3">
+          <span className="p-1 px-3 bg-gray-200 rounded-full text-gray-600">
+            📅 {trip?.userSelection?.noOfDays} days
+          </span>
+          <span className="p-1 px-3 bg-gray-200 rounded-full text-gray-600">
+            💰 {trip?.userSelection?.budget} budget
+          </span>
+          <span className="p-1 px-3 bg-gray-200 rounded-full text-gray-600">
+            🧳 {trip?.userSelection?.traveler}
+          </span>
         </div>
+        <p className="text-sm text-gray-500">
+          AI-generated recommendations are suggestions, not verified bookings, prices, or opening hours.
+        </p>
+      </div>
     </div>
-  )
+  );
 }
-
-export default InfoSection
