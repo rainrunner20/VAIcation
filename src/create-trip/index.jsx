@@ -78,6 +78,7 @@ function CreateTrip() {
   const SaveAiTrip = async (tripData) => {
     const user = JSON.parse(localStorage.getItem('user') || 'null');
     if (!user?.email) throw new Error('Sign in before saving.');
+    if (!db) throw new Error('Firestore must be configured before saving.');
     const docId = crypto.randomUUID();
     await setDoc(doc(db, 'AITrips', docId), {
       userSelection: formData, tripData, userEmail: user.email, id: docId
